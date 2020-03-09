@@ -2,8 +2,8 @@
 """
 https://realpython.com/pygame-a-primer/
 """
-import random
 import pickle
+import json
 
 import pygame
 
@@ -18,23 +18,49 @@ from pygame.locals import (
     QUIT,
 )
 
+from spritesheet import SpriteSheet
+
 SCREEN_WIDTH = 800
-SCREEN_HEIGHT = 640
+SCREEN_HEIGHT = 600
+
+
+class Player:
+    def __init__(self, color: str, y_direction: int):
+        self.color = color
+        self.y_direction = y_direction
 
 
 class Board:
     def __init__(self):
+        with open('board.json') as board_config_file:
+            self.config = json.load(board_config_file)
+        self.position_size = self.config.get('Size')
+        self.rect = pygame.Rect(0, 0, self.position_size * 8, self.position_size * 8)
+        self.rect.left = (SCREEN_WIDTH - self.rect.width) / 2
+        self.rect.top = (SCREEN_HEIGHT - self.rect.height) / 2
         self.positions = [
-            [BoardPosition(x, y) for x in range(8)] for y in range(8)
+            [BoardPosition(x, y, self) for y in range(8)] for x in range(8)
         ]
         # print(self.positions)
 
 
-class BoardPosition:
-    def __init__(self, x: int, y: int):
+class BoardPosition(pygame.sprite.Sprite):
+    def __init__(self, x: int, y: int, board: Board):
+        super().__init__()
         self.x = x
         self.y = y
+        self.board = board
         self.game_piece = None
+        self.surface = pygame.Surface((board.position_size, board.position_size))
+        dark_config = board.config.get('Dark')
+        light_config = board.config.get('Light')
+        if (self.x % 2 == 0 and self.y % 2 == 0) or (self.x % 2 == 1 and self.y % 2 == 1):
+            self.surface.fill((dark_config.get('R'), dark_config.get('G'), dark_config.get('B')))
+        else:
+            self.surface.fill((light_config.get('R'), light_config.get('G'), light_config.get('B')))
+        self.rect: pygame.rect = self.surface.get_rect()
+        self.rect.left = board.rect.left + (self.x * self.surface.get_width())
+        self.rect.bottom = board.rect.bottom - (self.y * self.surface.get_height())
 
     def __repr__(self):
         return f'<BoardPosition: {self.x}, {self.y}>'
@@ -42,15 +68,71 @@ class BoardPosition:
     def __str__(self):
         return f'<BoardPosition: {chr(self.x + 97)}{self.y}'
 
+    def update(self):
+        """
+        Sprite builtin update method
+        :return:
+        """
 
-class GamePiece:
-    def __init__(self, image, board_position, player):
-        self.image = image
-        self.board_position = board_position
+
+class Piece(pygame.sprite.Sprite):
+    def __init__(self, player: Player):
+        super().__init__()
+        self.surface: pygame.Surface = None
+        self.image: pygame.image = None
+        self.rect: pygame.Rect = None
+        # self.image = pygame.image.load(image)
+        self.board_position = None
         self.player = player
+        # self.surface: pygame.Surface = pygame.image.load(image).convert()
+        # self.rect = self.surface.get_rect()
+        # self.player = player
+
+    def set_image(self, filename: str):
+        self.image = pygame.image.load(filename).convert_alpha()
+        self.surface = self.image
+        self.rect = self.image.get_rect()
+
+    def set_position(self, board_position: BoardPosition):
+        self.board_position = board_position
+        board_position.game_piece = self
+        self.rect.left = board_position.rect.left
+        self.rect.top = board_position.rect.top
+        
+    def draw(self):
+        self.rect = self.image.get_rect()
+        self.rect.topleft = 0, 0
 
     def move(self):
         raise NotImplementedError('Child class must define a movement')
+
+
+class Pawn(Piece):
+    def move(self):
+        pass
+
+class Rook(Piece):
+    def move(self):
+        pass
+
+class Bishop(Piece):
+    def move(self):
+        pass
+
+
+class Knight(Piece):
+    def move(self):
+        pass
+
+
+class Queen(Piece):
+    def move(self):
+        pass
+
+
+class King(Piece):
+    def move(self):
+        pass
 
 
 def get_center(parent_surface: pygame.Surface, child_surface: pygame.Surface):
@@ -82,8 +164,52 @@ class Pygame:
         self.game_session: GameSession = self.load()
         self.font = pygame.font.SysFont('mono', 20, bold=True)
         self.all_sprites = pygame.sprite.Group()
+        self.game_pieces = pygame.sprite.Group()
+
+        self.players = [Player('White', y_direction=1), Player('Black', y_direction=-1)]
 
         self.board = Board()
+        for position in self.board.positions:
+            self.all_sprites.add(position)
+        # for x in range(8):
+        #     pawn = Pawn('icons/pawn80x80.png', self.board.positions[x][1], 0)
+        #     self.game_pieces.add(pawn)
+        #     self.all_sprites.add(pawn)
+        self.pieces = []
+        self._load_pieces()
+
+    def _load_pieces(self):
+
+        layout_filename = 'piece_layout.json'
+        icon_filename = 'icons.json'
+        # spritesheet_filename = 'icons/chess_pieces.bmp'
+        # piece_spritesheet = SpriteSheet(spritesheet_filename)
+        # piece_images = piece_spritesheet.load_grid_images(2, 6, x_margin=64, x_padding=72, y_margin=68, y_padding=48)
+        piece_types = [King, Queen, Rook, Bishop, Knight, Pawn]
+        # piece_number = 0
+        with open(layout_filename) as layout_config_file:
+            layout_config = json.load(layout_config_file)
+        with open(icon_filename) as icon_config_file:
+            icon_config = json.load(icon_config_file)
+        for player in reversed(self.players):
+            for piece_type in piece_types:
+                positions = layout_config.get(player.color).get(piece_type.__name__)
+                for position in positions:
+                    piece = piece_type(player)
+                    # piece.set_image(piece_images[piece_number])
+                    piece.set_image(icon_config.get(player.color).get(piece_type.__name__))
+                    piece.set_position(self.board.positions[position.get('x')][position.get('y')])
+                    self.pieces.append(piece)
+                    self.game_pieces.add(piece)
+                    self.all_sprites.add(piece)
+                # piece_number += 1
+
+        # for image in piece_images:
+        #     piece = GamePiece()
+        #     piece.set_image(image)
+        #     self.game_pieces.add(piece)
+        #     self.all_sprites.add(piece)
+        #     self.pieces.append(piece)
 
     def run(self):
         """
@@ -102,10 +228,10 @@ class Pygame:
             self.background.fill((255, 255, 255))
 
             for sprite in self.all_sprites:
-                self.screen.blit(sprite.surf, sprite.rect)
+                self.screen.blit(sprite.surface, sprite.rect)
 
-            self.draw_text(
-                f"Playtime: {self.game_session.playtime:.2f}")
+            # self.draw_text(
+            #     f"Playtime: {self.game_session.playtime:.2f}")
 
             pygame.display.flip()
             self.screen.blit(self.background, (0, 0))

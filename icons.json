@@ -1,0 +1,18 @@
+{
+  "White": {
+    "King": "icons/kingW2.png",
+    "Queen": "icons/queenW2.png",
+    "Bishop": "icons/bishopW2.png",
+    "Knight": "icons/knightW2.png",
+    "Rook": "icons/rookW2.png",
+    "Pawn": "icons/pawnW2.png"
+  },
+  "Black": {
+    "King": "icons/kingB2.png",
+    "Queen": "icons/queenB2.png",
+    "Bishop": "icons/bishopB2.png",
+    "Knight": "icons/knightB2.png",
+    "Rook": "icons/rookB2.png",
+    "Pawn": "icons/pawnB2.png"
+  }
+}
