@@ -4,6 +4,9 @@ https://realpython.com/pygame-a-primer/
 """
 import pickle
 import json
+import typing
+from itertools import cycle
+from enum import IntEnum
 
 import pygame
 
@@ -15,6 +18,7 @@ from pygame.locals import (
     K_q,
     K_ESCAPE,
     KEYDOWN,
+    MOUSEBUTTONDOWN,
     QUIT,
 )
 
@@ -28,6 +32,7 @@ class Player:
     def __init__(self, color: str, y_direction: int):
         self.color = color
         self.y_direction = y_direction
+        self.pieces: typing.List[Piece] = []
 
 
 class Board:
@@ -49,8 +54,8 @@ class BoardPosition(pygame.sprite.Sprite):
         super().__init__()
         self.x = x
         self.y = y
-        self.board = board
-        self.game_piece = None
+        self.board: Board = board
+        self.piece: Piece = None
         self.surface = pygame.Surface((board.position_size, board.position_size))
         dark_config = board.config.get('Dark')
         light_config = board.config.get('Light')
@@ -58,7 +63,7 @@ class BoardPosition(pygame.sprite.Sprite):
             self.surface.fill((dark_config.get('R'), dark_config.get('G'), dark_config.get('B')))
         else:
             self.surface.fill((light_config.get('R'), light_config.get('G'), light_config.get('B')))
-        self.rect: pygame.rect = self.surface.get_rect()
+        self.rect: pygame.Rect = self.surface.get_rect()
         self.rect.left = board.rect.left + (self.x * self.surface.get_width())
         self.rect.bottom = board.rect.bottom - (self.y * self.surface.get_height())
 
@@ -66,7 +71,7 @@ class BoardPosition(pygame.sprite.Sprite):
         return f'<BoardPosition: {self.x}, {self.y}>'
 
     def __str__(self):
-        return f'<BoardPosition: {chr(self.x + 97)}{self.y}'
+        return f'<BoardPosition: {chr(self.x + 97)}{self.y + 1}>'
 
     def update(self):
         """
@@ -82,8 +87,10 @@ class Piece(pygame.sprite.Sprite):
         self.image: pygame.image = None
         self.rect: pygame.Rect = None
         # self.image = pygame.image.load(image)
-        self.board_position = None
-        self.player = player
+        self.board_position: BoardPosition = None
+        self.initial_board_position: BoardPosition = None
+        self.player: Player = player
+        player.pieces.append(self)
         # self.surface: pygame.Surface = pygame.image.load(image).convert()
         # self.rect = self.surface.get_rect()
         # self.player = player
@@ -94,44 +101,51 @@ class Piece(pygame.sprite.Sprite):
         self.rect = self.image.get_rect()
 
     def set_position(self, board_position: BoardPosition):
+        if self.board_position is None:
+            self.initial_board_position = board_position
         self.board_position = board_position
-        board_position.game_piece = self
+        board_position.piece = self
         self.rect.left = board_position.rect.left
         self.rect.top = board_position.rect.top
         
-    def draw(self):
-        self.rect = self.image.get_rect()
-        self.rect.topleft = 0, 0
+    # def draw(self):
+    #     self.rect = self.image.get_rect()
+    #     self.rect.topleft = 0, 0
 
-    def move(self):
+    def can_move(self, position: BoardPosition) -> bool:
         raise NotImplementedError('Child class must define a movement')
 
 
 class Pawn(Piece):
-    def move(self):
-        pass
+    def can_move(self, position: BoardPosition) -> bool:
+        if position.piece is not None and position.piece.player == self.player:
+            return False
+        if position.x == self.board_position.x and position.y == (self.board_position.y + self.player.y_direction):
+            return True
+
 
 class Rook(Piece):
-    def move(self):
+    def can_move(self, position: BoardPosition) -> bool:
         pass
 
+
 class Bishop(Piece):
-    def move(self):
+    def can_move(self, position: BoardPosition) -> bool:
         pass
 
 
 class Knight(Piece):
-    def move(self):
+    def can_move(self, position: BoardPosition) -> bool:
         pass
 
 
 class Queen(Piece):
-    def move(self):
+    def can_move(self, position: BoardPosition) -> bool:
         pass
 
 
 class King(Piece):
-    def move(self):
+    def can_move(self, position: BoardPosition) -> bool:
         pass
 
 
@@ -140,9 +154,16 @@ def get_center(parent_surface: pygame.Surface, child_surface: pygame.Surface):
             (parent_surface.get_height() - child_surface.get_height()) / 2)
 
 
+class State(IntEnum):
+    PIECE_SELECT = 0
+    MOVE = 1
+
+
 class GameSession:
     def __init__(self):
         self.playtime = 0.0
+        self.state = State.PIECE_SELECT
+        self.selected_piece = None
 
 
 class Pygame:
@@ -167,6 +188,12 @@ class Pygame:
         self.game_pieces = pygame.sprite.Group()
 
         self.players = [Player('White', y_direction=1), Player('Black', y_direction=-1)]
+        player_cycle = cycle(self.players)
+        self.next_player = lambda: next(player_cycle)
+        self.active_player = self.next_player()
+        # self.active_player = self.game_session.active_player
+        self.state = self.game_session.state
+        self.selected_piece = self.game_session.selected_piece
 
         self.board = Board()
         for position in self.board.positions:
@@ -217,6 +244,7 @@ class Pygame:
         :return:
         """
         running = True
+        first_loop = True
         while running:
             milliseconds = self.clock.tick(self.fps)
             self.game_session.playtime += milliseconds / 1000.0
@@ -224,19 +252,51 @@ class Pygame:
             for event in pygame.event.get():
                 if event.type == QUIT or (event.type == KEYDOWN and event.key in [K_ESCAPE, K_q]):
                     running = False
+                if event.type == MOUSEBUTTONDOWN:
+                    # TODO: if right-mouse-button, undo piece select
+                    if self.board.rect.collidepoint(event.pos):
+                        self.act(event.pos)
 
-            self.background.fill((255, 255, 255))
-
-            for sprite in self.all_sprites:
-                self.screen.blit(sprite.surface, sprite.rect)
-
-            # self.draw_text(
-            #     f"Playtime: {self.game_session.playtime:.2f}")
-
-            pygame.display.flip()
-            self.screen.blit(self.background, (0, 0))
+            if first_loop:
+                self.draw()
 
         pygame.quit()
+
+    def draw(self):
+        self.background.fill((255, 255, 255))
+
+        for sprite in self.all_sprites:
+            self.screen.blit(sprite.surface, sprite.rect)
+
+        # self.draw_text(
+        #     f"Playtime: {self.game_session.playtime:.2f}")
+
+        pygame.display.flip()
+        self.screen.blit(self.background, (0, 0))
+
+    def act(self, pos: tuple):
+        player = self.active_player
+        if self.state == State.PIECE_SELECT:
+            for piece in player.pieces:
+                if piece.rect.collidepoint(*pos):
+                    print(f'Selected {player.color} {piece.__class__.__name__}')
+                    self.state = State.MOVE
+                    self.selected_piece = piece
+        elif self.state == State.MOVE:
+            for row in self.board.positions:
+                for position in row:
+                    if position.rect.collidepoint(*pos):
+                        if self.selected_piece.can_move(position):
+                            print(f'Moving {player.color} {self.selected_piece.__class__.__name__} to {position}')
+                            self.selected_piece.set_position(position)
+                            self.draw()
+                            self.state = State.PIECE_SELECT
+                            self.active_player = self.next_player()
+                        else:
+                            print(f'Not a legal move')
+
+
+
 
     def load(self) -> GameSession:
         try:
