@@ -44,12 +44,12 @@ class Board:
         self.rect.left = (SCREEN_WIDTH - self.rect.width) / 2
         self.rect.top = (SCREEN_HEIGHT - self.rect.height) / 2
         self.positions = [
-            [BoardPosition(x, y, self) for y in range(8)] for x in range(8)
+            [Position(x, y, self) for y in range(8)] for x in range(8)
         ]
         # print(self.positions)
 
 
-class BoardPosition(pygame.sprite.Sprite):
+class Position(pygame.sprite.Sprite):
     def __init__(self, x: int, y: int, board: Board):
         super().__init__()
         self.x = x
@@ -79,6 +79,11 @@ class BoardPosition(pygame.sprite.Sprite):
         :return:
         """
 
+    def clear_piece(self):
+        self.piece = None
+
+
+
 
 class Piece(pygame.sprite.Sprite):
     def __init__(self, player: Player):
@@ -87,8 +92,8 @@ class Piece(pygame.sprite.Sprite):
         self.image: pygame.image = None
         self.rect: pygame.Rect = None
         # self.image = pygame.image.load(image)
-        self.board_position: BoardPosition = None
-        self.initial_board_position: BoardPosition = None
+        self.position: Position = None
+        self.initial_position: Position = None
         self.player: Player = player
         player.pieces.append(self)
         # self.surface: pygame.Surface = pygame.image.load(image).convert()
@@ -100,52 +105,129 @@ class Piece(pygame.sprite.Sprite):
         self.surface = self.image
         self.rect = self.image.get_rect()
 
-    def set_position(self, board_position: BoardPosition):
-        if self.board_position is None:
-            self.initial_board_position = board_position
-        self.board_position = board_position
-        board_position.piece = self
-        self.rect.left = board_position.rect.left
-        self.rect.top = board_position.rect.top
-        
+    def set_position(self, position: Position):
+        if self.position is None:
+            self.initial_position = position
+        else:
+            # unset old position's piece
+            self.position.piece = None
+        self.position = position
+        # reset position's piece to self
+        position.piece = self
+        self.rect.left = position.rect.left
+        self.rect.top = position.rect.top
+
     # def draw(self):
     #     self.rect = self.image.get_rect()
     #     self.rect.topleft = 0, 0
 
-    def can_move(self, position: BoardPosition) -> bool:
+    def can_move(self, position: Position) -> bool:
         raise NotImplementedError('Child class must define a movement')
 
 
 class Pawn(Piece):
-    def can_move(self, position: BoardPosition) -> bool:
+    def can_move(self, position: Position) -> bool:
+        # same position
+        if position == self.position:
+            return False
+        # own piece in the way
         if position.piece is not None and position.piece.player == self.player:
             return False
-        if position.x == self.board_position.x and position.y == (self.board_position.y + self.player.y_direction):
+        # standard forward move
+        elif position.x == self.position.x and \
+            position.y == (self.position.y + self.player.y_direction) and \
+            position.piece is None:
+            return True
+        # double-move from starting position
+        elif position.x == self.position.x and \
+            position.y == (self.position.y + (self.player.y_direction * 2)) and \
+            self.position == self.initial_position and \
+            position.piece is None:
+            return True
+        # attack move into a position occupied by enemy
+        elif (position.x == (self.position.x + 1) or position.x == (self.position.x - 1)) and \
+            position.y == (self.position.y + self.player.y_direction) and \
+            position.piece is not None and \
+            position.piece.player != self.player:
             return True
 
 
 class Rook(Piece):
-    def can_move(self, position: BoardPosition) -> bool:
-        pass
+    def can_move(self, position: Position) -> bool:
+        board = position.board
+        # same position
+        if position == self.position:
+            print('rule 1')
+            return False
+        # own piece in the way
+        if position.piece is not None and position.piece.player == self.player:
+            print('rule 2')
+            return False
+        if position.x == self.position.x and position.y != self.position.y:
+            for y in range(min(position.y, self.position.y), max(position.y, self.position.y), 1):
+                if y == self.position.y:
+                    continue
+                if board.positions[position.x][y].piece is not None:
+                    print(f'{board.positions[position.x][y]} has piece {board.positions[position.x][y].piece.__class__.__name__}')
+                    return False
+            return True
+        if position.x != self.position.x and position.y == self.position.y:
+            for x in range(min(position.x, self.position.x), max(position.x, self.position.x), 1):
+                if x == self.position.x:
+                    continue
+                if board.positions[x][position.y].piece is not None:
+                    print('rule 4')
+                    return False
+            return True
 
 
 class Bishop(Piece):
-    def can_move(self, position: BoardPosition) -> bool:
-        pass
+    def can_move(self, position: Position) -> bool:
+        board = position.board
+        # same position
+        if position == self.position:
+            print('rule 1')
+            return False
+        # own piece in the way
+        if position.piece is not None and position.piece.player == self.player:
+            print('rule 2')
+            return False
+        # TODO: Fix movement
+        print(f'start position: {self.position.x},{self.position.y}, end position: {position.x},{position.y}')
+        x_dif = position.x - self.position.x
+        y_dif = position.y - self.position.y
+        if abs(x_dif) == abs(y_dif):
+            for dif in range(1, abs(x_dif), 1):
+                x = self.position.x + (dif % x_dif) if x_dif > 0 else self.position.x - (dif % abs(x_dif))
+                y = self.position.y + (dif % y_dif) if y_dif > 0 else self.position.y - (dif & abs(y_dif))
+                print(f'dif: {dif}, x: {x}, y: {y}')
+                if board.positions[x][y].piece is not None:
+                    print(
+                        f'{board.positions[x][y]} has piece {board.positions[x][y].piece.__class__.__name__}')
+                    return False
+            return True
 
 
 class Knight(Piece):
-    def can_move(self, position: BoardPosition) -> bool:
-        pass
+    def can_move(self, position: Position) -> bool:
+        board = position.board
+        # same position
+        if position == self.position:
+            print('rule 1')
+            return False
+        # own piece in the way
+        if position.piece is not None and position.piece.player == self.player:
+            print('rule 2')
+            return False
 
 
 class Queen(Piece):
-    def can_move(self, position: BoardPosition) -> bool:
+    def can_move(self, position: Position) -> bool:
         pass
 
 
 class King(Piece):
-    def can_move(self, position: BoardPosition) -> bool:
+    def can_move(self, position: Position) -> bool:
         pass
 
 
@@ -167,7 +249,7 @@ class GameSession:
 
 
 class Pygame:
-    def __init__(self, width: int, height: int, fps: int = 60):
+    def __init__(self, width: int, height: int, fps: int = 20):
         """
         :param width:
         :param height:
@@ -253,9 +335,7 @@ class Pygame:
                 if event.type == QUIT or (event.type == KEYDOWN and event.key in [K_ESCAPE, K_q]):
                     running = False
                 if event.type == MOUSEBUTTONDOWN:
-                    # TODO: if right-mouse-button, undo piece select
-                    if self.board.rect.collidepoint(event.pos):
-                        self.act(event.pos)
+                    self.act(event.pos, event.button)
 
             if first_loop:
                 self.draw()
@@ -274,29 +354,35 @@ class Pygame:
         pygame.display.flip()
         self.screen.blit(self.background, (0, 0))
 
-    def act(self, pos: tuple):
-        player = self.active_player
-        if self.state == State.PIECE_SELECT:
-            for piece in player.pieces:
-                if piece.rect.collidepoint(*pos):
-                    print(f'Selected {player.color} {piece.__class__.__name__}')
-                    self.state = State.MOVE
-                    self.selected_piece = piece
-        elif self.state == State.MOVE:
-            for row in self.board.positions:
-                for position in row:
-                    if position.rect.collidepoint(*pos):
-                        if self.selected_piece.can_move(position):
-                            print(f'Moving {player.color} {self.selected_piece.__class__.__name__} to {position}')
-                            self.selected_piece.set_position(position)
-                            self.draw()
-                            self.state = State.PIECE_SELECT
-                            self.active_player = self.next_player()
-                        else:
-                            print(f'Not a legal move')
-
-
-
+    def act(self, pos: tuple, button: int):
+        if button == 1 and self.board.rect.collidepoint(pos):
+            player = self.active_player
+            if self.state == State.PIECE_SELECT:
+                for piece in player.pieces:
+                    if piece.rect.collidepoint(*pos):
+                        print(f'Selected {player.color} {piece.__class__.__name__}')
+                        self.state = State.MOVE
+                        self.selected_piece = piece
+            elif self.state == State.MOVE:
+                for row in self.board.positions:
+                    for position in row:
+                        if position.rect.collidepoint(*pos):
+                            if self.selected_piece.can_move(position):
+                                print(f'Moving {player.color} {self.selected_piece.__class__.__name__} to {position}')
+                                if position.piece is not None:
+                                    position.piece.player.pieces.remove(position.piece)
+                                    position.piece.kill()
+                                self.selected_piece.set_position(position)
+                                self.selected_piece = None
+                                self.draw()
+                                self.state = State.PIECE_SELECT
+                                self.active_player = self.next_player()
+                            else:
+                                print(f'Not a legal move')
+        elif button == 3 and self.state == State.MOVE:
+            self.state = State.PIECE_SELECT
+            self.selected_piece = None
+            print('Canceled piece selection')
 
     def load(self) -> GameSession:
         try:
