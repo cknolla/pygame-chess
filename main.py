@@ -49,7 +49,8 @@ class Position(pygame.sprite.Sprite):
         self.x = x
         self.y = y
         self.board: Board = board
-        self.piece = None
+        self.piece: Piece = None
+        self.previous_piece: Piece = None
         self.surface = pygame.Surface((board.position_size, board.position_size))
         dark_config = board.config.get('Dark')
         light_config = board.config.get('Light')
@@ -85,6 +86,7 @@ class Piece(pygame.sprite.Sprite):
         self.image: pygame.image = None
         self.rect: pygame.Rect = None
         self.position: Position = None
+        self.previous_position: Position = None
         self.initial_position: Position = None
         self.dirty = False  # has moved
         self.player: Player = player
@@ -96,6 +98,7 @@ class Piece(pygame.sprite.Sprite):
         self.rect = self.image.get_rect()
 
     def set_position(self, position: Position):
+        self.previous_position = self.position
         if self.position is None:
             self.initial_position = position
         else:
@@ -103,9 +106,17 @@ class Piece(pygame.sprite.Sprite):
             self.position.piece = None
         self.position = position
         # reset position's piece to self
+        position.previous_piece = position.piece
         position.piece = self
         self.rect.left = position.rect.left
         self.rect.top = position.rect.top
+
+    def restore_position(self):
+        self.position.piece = self.position.previous_piece
+        self.position = self.previous_position
+        self.previous_position.piece = self
+        self.rect.left = self.position.rect.left
+        self.rect.top = self.position.rect.top
 
     def can_move(self, position: Position) -> bool:
         raise NotImplementedError('Child class must define a movement')
