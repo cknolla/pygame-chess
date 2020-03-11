@@ -134,7 +134,7 @@ class Piece(pygame.sprite.Sprite):
         board = position.board
         if position.x == self.position.x and position.y != self.position.y:
             for y in range(min(position.y, self.position.y), max(position.y, self.position.y), 1):
-                if y == self.position.y:
+                if y == self.position.y or y == position.y:
                     continue
                 if board.positions[position.x][y].piece is not None:
                     print(f'{board.positions[position.x][y]} has piece {board.positions[position.x][y].piece.name}')
@@ -300,30 +300,39 @@ class Pygame:
         self.screen = pygame.display.set_mode((self.width, self.height), pygame.DOUBLEBUF)
         self.screen.fill((255, 0, 255))
         self.background = pygame.Surface(self.screen.get_size()).convert()
+        self.background.fill((255, 255, 255))
+        self.screen.blit(self.background, (0, 0))
         self.clock = pygame.time.Clock()
         self.fps = fps
-        self.game_session: GameSession = self.load()
         self.font = pygame.font.SysFont('mono', 20, bold=True)
         self.all_sprites = pygame.sprite.Group()
         self.game_pieces = pygame.sprite.Group()
-
         self.players = [Player('White', y_direction=1), Player('Black', y_direction=-1)]
-        player_cycle = cycle(self.players)
-        self.next_player = lambda: next(player_cycle)
-        self.active_player = self.next_player()
-        # self.active_player = self.game_session.active_player
-        self.state = self.game_session.state
-        self.selected_piece = self.game_session.selected_piece
-
         self.board = Board()
         for position in self.board.positions:
             self.all_sprites.add(position)
-        # for x in range(8):
-        #     pawn = Pawn('icons/pawn80x80.png', self.board.positions[x][1], 0)
-        #     self.game_pieces.add(pawn)
-        #     self.all_sprites.add(pawn)
+        self.game_session = None
+        self.next_player = None
+        self.active_player = None
+        self.state = None
+        self.selected_piece = None
+        self.pieces = []
+        self.reset()
+
+    def reset(self):
+        self.game_session: GameSession = GameSession()
+        player_cycle = cycle(self.players)
+        self.next_player = lambda: next(player_cycle)
+        self.active_player = self.next_player()
+        self.state = self.game_session.state
+        self.selected_piece = self.game_session.selected_piece
+        for player in self.players:
+            for piece in player.pieces:
+                piece.kill()
+            player.pieces = []
         self.pieces = []
         self._load_pieces()
+        self.draw()
 
     def _load_pieces(self):
 
@@ -364,7 +373,6 @@ class Pygame:
         :return:
         """
         running = True
-        first_loop = True
         while running:
             milliseconds = self.clock.tick(self.fps)
             self.game_session.playtime += milliseconds / 1000.0
@@ -375,16 +383,14 @@ class Pygame:
                 if event.type == MOUSEBUTTONDOWN:
                     self.act(event.pos, event.button)
 
-            if first_loop:
-                self.draw()
-
         pygame.quit()
 
     def draw(self):
-        self.background.fill((255, 255, 255))
-
         for sprite in self.all_sprites:
             self.screen.blit(sprite.surface, sprite.rect)
+
+        width, height = self.draw_text(f'Player turn: {self.active_player.color}', (0, 0), (0, 0, 0))
+        self.draw_text(f'Piece selected: {self.selected_piece.name if self.selected_piece else "None"}', (0, height), (0, 0, 0))
 
         # self.draw_text(
         #     f"Playtime: {self.game_session.playtime:.2f}")
@@ -408,15 +414,19 @@ class Pygame:
                             if self.selected_piece.can_move(position):
                                 print(f'Moving {player.color} {self.selected_piece.name} to {position}')
                                 if position.piece is not None:
+                                    print(f'Defeated {position.piece.player.color} {position.piece.name}')
                                     position.piece.player.pieces.remove(position.piece)
                                     position.piece.kill()
+                                    if position.piece.name == 'King':
+                                        self.reset()
+                                        return
                                 self.selected_piece.set_position(position)
                                 self.selected_piece = None
                                 self.draw()
                                 self.state = State.PIECE_SELECT
                                 self.active_player = self.next_player()
                             else:
-                                print(f'Not a legal move')
+                                print(f'Movement to {position} not legal')
         elif button == 3 and self.state == State.MOVE:
             self.state = State.PIECE_SELECT
             self.selected_piece = None
@@ -433,15 +443,16 @@ class Pygame:
         with open('data.dat', 'wb') as file:
             pickle.dump(self.game_session, file)
 
-    def draw_text(self, text: str):
+    def draw_text(self, text: str, position: tuple, color: tuple):
         """
         Draw text in window
         :param text:
         :return:
         """
         font_width, font_height = self.font.size(text)
-        surface = self.font.render(text, True, (0, 255, 0))
-        self.screen.blit(surface, (0, 0))
+        surface = self.font.render(text, True, color)
+        self.screen.blit(surface, position)
+        return font_width, font_height
 
 
 if __name__ == '__main__':
