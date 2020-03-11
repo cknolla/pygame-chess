@@ -326,22 +326,29 @@ class King(Piece):
                 return True
         return False
 
-    # TODO: only checks if king can move out of check, not if other pieces can interrupt it
     def checkmate_check(self):
         board = self.position.board
-        original_position = self.position
-        for x in range(self.position.x - 1, self.position.x + 1, 1):
-            for y in range(self.position.y - 1, self.position.y + 1, 1):
-                try:
-                    position = board.positions[x][y]
-                except IndexError:
-                    continue
-                if self.can_move(position):
-                    self.position = position
-                    if not self.check_check():
-                        self.position = original_position
-                        return False
-        self.position = original_position
+        for piece in self.player.pieces:
+            for col in board.positions:
+                for position in col:
+                    if piece.can_move(position):
+                        piece.set_position(position)
+                        if not self.check_check():
+                            piece.restore_position()
+                            return False
+                        piece.restore_position()
+        # for x in range(self.position.x - 1, self.position.x + 1, 1):
+        #     for y in range(self.position.y - 1, self.position.y + 1, 1):
+        #         try:
+        #             position = board.positions[x][y]
+        #         except IndexError:
+        #             continue
+        #         if self.can_move(position):
+        #             self.position = position
+        #             if not self.check_check():
+        #                 self.position = original_position
+        #                 return False
+        # self.position = original_position
         return True
 
 
