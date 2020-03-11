@@ -11,10 +11,6 @@ from enum import IntEnum
 import pygame
 
 from pygame.locals import (
-    K_w,
-    K_s,
-    K_a,
-    K_d,
     K_q,
     K_r,
     K_ESCAPE,
@@ -35,17 +31,16 @@ class Player:
 
 
 class Board:
-    def __init__(self):
+    def __init__(self, width: int, height: int):
         with open('board.json') as board_config_file:
             self.config = json.load(board_config_file)
         self.position_size = self.config.get('Size')
         self.rect = pygame.Rect(0, 0, self.position_size * 8, self.position_size * 8)
-        self.rect.left = (SCREEN_WIDTH - self.rect.width) / 2
-        self.rect.top = (SCREEN_HEIGHT - self.rect.height) / 2
+        self.rect.left = (width - self.rect.width) / 2
+        self.rect.top = (height - self.rect.height) / 2
         self.positions = [
             [Position(x, y, self) for y in range(8)] for x in range(8)
         ]
-        # print(self.positions)
 
 
 class Position(pygame.sprite.Sprite):
@@ -54,7 +49,7 @@ class Position(pygame.sprite.Sprite):
         self.x = x
         self.y = y
         self.board: Board = board
-        self.piece: Piece = None
+        self.piece = None
         self.surface = pygame.Surface((board.position_size, board.position_size))
         dark_config = board.config.get('Dark')
         light_config = board.config.get('Light')
@@ -89,15 +84,11 @@ class Piece(pygame.sprite.Sprite):
         self.surface: pygame.Surface = None
         self.image: pygame.image = None
         self.rect: pygame.Rect = None
-        # self.image = pygame.image.load(image)
         self.position: Position = None
         self.initial_position: Position = None
         self.dirty = False  # has moved
         self.player: Player = player
         player.pieces.append(self)
-        # self.surface: pygame.Surface = pygame.image.load(image).convert()
-        # self.rect = self.surface.get_rect()
-        # self.player = player
 
     def set_image(self, filename: str):
         self.image = pygame.image.load(filename).convert_alpha()
@@ -116,19 +107,22 @@ class Piece(pygame.sprite.Sprite):
         self.rect.left = position.rect.left
         self.rect.top = position.rect.top
 
-    def same_position(self, position: Position) -> bool:
+    def can_move(self, position: Position) -> bool:
+        raise NotImplementedError('Child class must define a movement')
+
+    def _same_position(self, position: Position) -> bool:
         if position == self.position:
             print('Can\'t move to same position')
             return True
         return False
 
-    def own_piece_interfering(self, position: Position) -> bool:
+    def _own_piece_interfering(self, position: Position) -> bool:
         if position.piece is not None and position.piece.player == self.player:
             print(f'Own {position.piece.name} in the way at destination')
             return True
         return False
 
-    def straight_clear(self, position: Position) -> bool:
+    def _straight_clear(self, position: Position) -> bool:
         board = position.board
         if position.x == self.position.x and position.y != self.position.y:
             for y in range(min(position.y, self.position.y), max(position.y, self.position.y), 1):
@@ -147,7 +141,7 @@ class Piece(pygame.sprite.Sprite):
                     return False
             return True
 
-    def diagonal_clear(self, position: Position) -> bool:
+    def _diagonal_clear(self, position: Position) -> bool:
         board = position.board
         # print(f'start position: {self.position.x},{self.position.y}, end position: {position.x},{position.y}')
         x_dif = position.x - self.position.x
@@ -162,17 +156,14 @@ class Piece(pygame.sprite.Sprite):
                     return False
             return True
 
-    def can_move(self, position: Position) -> bool:
-        raise NotImplementedError('Child class must define a movement')
-
 
 class Pawn(Piece):
     def can_move(self, position: Position) -> bool:
         # same position
-        if self.same_position(position):
+        if self._same_position(position):
             return False
         # own piece in the way
-        elif self.own_piece_interfering(position):
+        elif self._own_piece_interfering(position):
             return False
         # standard forward move
         elif position.x == self.position.x and \
@@ -197,12 +188,12 @@ class Pawn(Piece):
 class Rook(Piece):
     def can_move(self, position: Position) -> bool:
         # same position
-        if self.same_position(position):
+        if self._same_position(position):
             return False
         # own piece in the way
-        elif self.own_piece_interfering(position):
+        elif self._own_piece_interfering(position):
             return False
-        elif self.straight_clear(position):
+        elif self._straight_clear(position):
             return True
         return False
 
@@ -210,12 +201,12 @@ class Rook(Piece):
 class Bishop(Piece):
     def can_move(self, position: Position) -> bool:
         # same position
-        if self.same_position(position):
+        if self._same_position(position):
             return False
         # own piece in the way
-        elif self.own_piece_interfering(position):
+        elif self._own_piece_interfering(position):
             return False
-        elif self.diagonal_clear(position):
+        elif self._diagonal_clear(position):
             return True
         return False
 
@@ -223,12 +214,13 @@ class Bishop(Piece):
 class Knight(Piece):
     def can_move(self, position: Position) -> bool:
         # same position
-        if self.same_position(position):
+        if self._same_position(position):
             return False
         # own piece in the way
-        elif self.own_piece_interfering(position):
+        elif self._own_piece_interfering(position):
             return False
-        elif (abs(position.x - self.position.x) == 1 and abs(position.y - self.position.y) == 2) or (abs(position.x - self.position.x) == 2 and abs(position.y - self.position.y) == 1):
+        elif (abs(position.x - self.position.x) == 1 and abs(position.y - self.position.y) == 2) or (
+            abs(position.x - self.position.x) == 2 and abs(position.y - self.position.y) == 1):
             return True
         return False
 
@@ -236,12 +228,12 @@ class Knight(Piece):
 class Queen(Piece):
     def can_move(self, position: Position) -> bool:
         # same position
-        if self.same_position(position):
+        if self._same_position(position):
             return False
         # own piece in the way
-        elif self.own_piece_interfering(position):
+        elif self._own_piece_interfering(position):
             return False
-        elif self.straight_clear(position) or self.diagonal_clear(position):
+        elif self._straight_clear(position) or self._diagonal_clear(position):
             return True
         return False
 
@@ -252,10 +244,10 @@ class King(Piece):
         original_piece = position.piece
         board = position.board
         # same position
-        if self.same_position(position):
+        if self._same_position(position):
             return False
         # own piece in the way
-        elif self.own_piece_interfering(position):
+        elif self._own_piece_interfering(position):
             return False
         elif abs(position.x - self.position.x) <= 1 and abs(position.y - self.position.y) <= 1:
             self.set_position(position)
@@ -295,7 +287,8 @@ class King(Piece):
                 rook_position = board.positions[0][y]
                 if rook_position.piece is not None and rook_position.piece.name == 'Rook' and rook_position.piece.player == self.player and not rook_position.piece.dirty:
                     rook = rook_position.piece
-                    if board.positions[self.position.x - 1][y].piece is None and board.positions[self.position.x - 2][y].piece is None and board.positions[self.position.x - 3][y].piece is None:
+                    if board.positions[self.position.x - 1][y].piece is None and board.positions[self.position.x - 2][
+                        y].piece is None and board.positions[self.position.x - 3][y].piece is None:
                         self.set_position(board.positions[self.position.x - 1][y])
                         if self.check_check():
                             print(f'King would be in check passing through {self.position}')
@@ -322,23 +315,23 @@ class King(Piece):
                 return True
         return False
 
-    # only checks if king can move out of check, not if other pieces can interrupt it
-    # def checkmate_check(self, other_player: Player):
-    #     board = self.position.board
-    #     original_position = self.position
-    #     for x in range(self.position.x - 1, self.position.x + 1, 1):
-    #         for y in range(self.position.y - 1, self.position.y + 1, 1):
-    #             try:
-    #                 position = board.positions[x][y]
-    #             except IndexError:
-    #                 continue
-    #             if self.can_move(position):
-    #                 self.position = position
-    #                 if not self.check_check(other_player):
-    #                     self.position = original_position
-    #                     return False
-    #     self.position = original_position
-    #     return True
+    # TODO: only checks if king can move out of check, not if other pieces can interrupt it
+    def checkmate_check(self):
+        board = self.position.board
+        original_position = self.position
+        for x in range(self.position.x - 1, self.position.x + 1, 1):
+            for y in range(self.position.y - 1, self.position.y + 1, 1):
+                try:
+                    position = board.positions[x][y]
+                except IndexError:
+                    continue
+                if self.can_move(position):
+                    self.position = position
+                    if not self.check_check():
+                        self.position = original_position
+                        return False
+        self.position = original_position
+        return True
 
 
 def get_center(parent_surface: pygame.Surface, child_surface: pygame.Surface):
@@ -381,7 +374,7 @@ class Game:
         self.all_sprites = pygame.sprite.Group()
         self.game_pieces = pygame.sprite.Group()
         self.players = [Player('White', y_direction=1), Player('Black', y_direction=-1)]
-        self.board = Board()
+        self.board = Board(width, height)
         for position in self.board.positions:
             self.all_sprites.add(position)
         self.game_session = None
@@ -390,9 +383,9 @@ class Game:
         self.state = None
         self.selected_piece = None
         self.pieces = []
-        self.reset()
+        self._reset()
 
-    def reset(self):
+    def _reset(self):
         self.game_session: GameSession = GameSession()
         self.active_player = self.players[0]
         self.inactive_player = self.players[1]
@@ -404,7 +397,7 @@ class Game:
             player.pieces = []
         self.pieces = []
         self._load_pieces()
-        self.draw()
+        self._draw()
 
     def _next_player(self):
         old_active = self.active_player
@@ -415,11 +408,7 @@ class Game:
 
         layout_filename = 'piece_layout.json'
         icon_filename = 'icons.json'
-        # spritesheet_filename = 'icons/chess_pieces.bmp'
-        # piece_spritesheet = SpriteSheet(spritesheet_filename)
-        # piece_images = piece_spritesheet.load_grid_images(2, 6, x_margin=64, x_padding=72, y_margin=68, y_padding=48)
         piece_types = [King, Queen, Rook, Bishop, Knight, Pawn]
-        # piece_number = 0
         with open(layout_filename) as layout_config_file:
             layout_config = json.load(layout_config_file)
         with open(icon_filename) as icon_config_file:
@@ -429,20 +418,11 @@ class Game:
                 positions = layout_config.get(player.color).get(piece_type.__name__)
                 for position in positions:
                     piece = piece_type(player)
-                    # piece.set_image(piece_images[piece_number])
                     piece.set_image(icon_config.get(player.color).get(piece_type.__name__))
                     piece.set_position(self.board.positions[position.get('x')][position.get('y')])
                     self.pieces.append(piece)
                     self.game_pieces.add(piece)
                     self.all_sprites.add(piece)
-                # piece_number += 1
-
-        # for image in piece_images:
-        #     piece = GamePiece()
-        #     piece.set_image(image)
-        #     self.game_pieces.add(piece)
-        #     self.all_sprites.add(piece)
-        #     self.pieces.append(piece)
 
     def run(self):
         """
@@ -458,27 +438,13 @@ class Game:
                 if event.type == QUIT or (event.type == KEYDOWN and event.key in [K_ESCAPE, K_q]):
                     running = False
                 if event.type == MOUSEBUTTONDOWN:
-                    self.act(event.pos, event.button)
+                    self._act(event.pos, event.button)
                 if event.type == KEYDOWN and event.key == K_r:
-                    self.reset()
+                    self._reset()
 
         pygame.quit()
 
-    def draw(self):
-        for sprite in self.all_sprites:
-            self.screen.blit(sprite.surface, sprite.rect)
-
-        width, height = self.draw_text(f'Player turn: {self.active_player.color}', (0, 0), (0, 0, 0))
-        self.draw_text(f'Piece selected: {self.selected_piece.name if self.selected_piece else "None"}', (0, height), (0, 0, 0))
-        self.draw_text(self.check_text, (0, height * 2), (200, 0, 0))
-
-        # self.draw_text(
-        #     f"Playtime: {self.game_session.playtime:.2f}")
-
-        pygame.display.flip()
-        self.screen.blit(self.background, (0, 0))
-
-    def act(self, pos: tuple, button: int):
+    def _act(self, pos: tuple, button: int):
         if button == 1 and self.board.rect.collidepoint(pos):
             player = self.active_player
             if self.state == State.PIECE_SELECT:
@@ -498,7 +464,7 @@ class Game:
                                     position.piece.player.pieces.remove(position.piece)
                                     position.piece.kill()
                                     if position.piece.name == 'King':
-                                        self.reset()
+                                        self._reset()
                                         return
                                 self.selected_piece.set_position(position)
                                 self.selected_piece.dirty = True
@@ -516,7 +482,7 @@ class Game:
                                             # if in_checkmate:
                                             #     print(f'{self.active_player.color} checkmate! You lose!')
                                             #     self.reset()
-                                self.draw()
+                                self._draw()
                                 self.state = State.PIECE_SELECT
 
                             else:
@@ -526,18 +492,19 @@ class Game:
             self.selected_piece = None
             print('Canceled piece selection')
 
-    def load(self) -> GameSession:
-        try:
-            with open('data.dat', 'rb') as file:
-                return pickle.load(file)
-        except FileNotFoundError:
-            return GameSession()
+    def _draw(self):
+        for sprite in self.all_sprites:
+            self.screen.blit(sprite.surface, sprite.rect)
 
-    def save(self):
-        with open('data.dat', 'wb') as file:
-            pickle.dump(self.game_session, file)
+        width, height = self._draw_text(f'Player turn: {self.active_player.color}', (0, 0), (0, 0, 0))
+        self._draw_text(f'Piece selected: {self.selected_piece.name if self.selected_piece else "None"}', (0, height),
+                        (0, 0, 0))
+        self._draw_text(self.check_text, (0, height * 2), (200, 0, 0))
 
-    def draw_text(self, text: str, position: tuple, color: tuple):
+        pygame.display.flip()
+        self.screen.blit(self.background, (0, 0))
+
+    def _draw_text(self, text: str, position: tuple, color: tuple):
         """
         Draw text in window
         :param text:
@@ -547,6 +514,17 @@ class Game:
         surface = self.font.render(text, True, color)
         self.screen.blit(surface, position)
         return font_width, font_height
+
+    def _load(self) -> GameSession:
+        try:
+            with open('data.dat', 'rb') as file:
+                return pickle.load(file)
+        except FileNotFoundError:
+            return GameSession()
+
+    def _save(self):
+        with open('data.dat', 'wb') as file:
+            pickle.dump(self.game_session, file)
 
 
 if __name__ == '__main__':

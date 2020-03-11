@@ -1,9 +1,9 @@
 Basic chess in pygame
 
-# Requirements
+## Requirements
 Python3.6 must be installed and used due to pygame 1.9.6 dependency on it
 
-# Install
+## Install
 ```
 git clone git@github.com:cknolla/pygame-chess.git
 cd pygame-chess
@@ -21,5 +21,5 @@ R | Reset
 Left Click | Select piece / move
 Right Click | Cancel piece selection
 
-### Notes
+## Notes
 - Log of actions will appear in console, and if a move is not allowed, it will be explained there
