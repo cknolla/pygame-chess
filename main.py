@@ -23,8 +23,6 @@ from pygame.locals import (
     QUIT,
 )
 
-from spritesheet import SpriteSheet
-
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600
 
