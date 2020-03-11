@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-https://realpython.com/pygame-a-primer/
+fully-functional 2 player chess
+TODO: en-passant, pawn promotion, checkmate check
 """
 import pickle
 import json
 import typing
-from itertools import cycle
 from enum import IntEnum
 
 import pygame
@@ -16,6 +16,7 @@ from pygame.locals import (
     K_a,
     K_d,
     K_q,
+    K_r,
     K_ESCAPE,
     KEYDOWN,
     MOUSEBUTTONDOWN,
@@ -83,8 +84,6 @@ class Position(pygame.sprite.Sprite):
         self.piece = None
 
 
-
-
 class Piece(pygame.sprite.Sprite):
     def __init__(self, player: Player):
         super().__init__()
@@ -95,6 +94,7 @@ class Piece(pygame.sprite.Sprite):
         # self.image = pygame.image.load(image)
         self.position: Position = None
         self.initial_position: Position = None
+        self.dirty = False  # has moved
         self.player: Player = player
         player.pieces.append(self)
         # self.surface: pygame.Surface = pygame.image.load(image).convert()
@@ -151,23 +151,18 @@ class Piece(pygame.sprite.Sprite):
 
     def diagonal_clear(self, position: Position) -> bool:
         board = position.board
-        print(f'start position: {self.position.x},{self.position.y}, end position: {position.x},{position.y}')
+        # print(f'start position: {self.position.x},{self.position.y}, end position: {position.x},{position.y}')
         x_dif = position.x - self.position.x
         y_dif = position.y - self.position.y
         if abs(x_dif) == abs(y_dif):
             for dif in range(1, abs(x_dif), 1):
                 x = self.position.x + (dif % x_dif) if x_dif > 0 else self.position.x - (dif % abs(x_dif))
                 y = self.position.y + (dif % y_dif) if y_dif > 0 else self.position.y - (dif % abs(y_dif))
-                # print(f'dif: {dif}, x: {x}, y: {y}')
                 if board.positions[x][y].piece is not None:
                     print(
                         f'{board.positions[x][y]} has piece {board.positions[x][y].piece.name}')
                     return False
             return True
-
-    # def draw(self):
-    #     self.rect = self.image.get_rect()
-    #     self.rect.topleft = 0, 0
 
     def can_move(self, position: Position) -> bool:
         raise NotImplementedError('Child class must define a movement')
@@ -216,7 +211,6 @@ class Rook(Piece):
 
 class Bishop(Piece):
     def can_move(self, position: Position) -> bool:
-        board = position.board
         # same position
         if self.same_position(position):
             return False
@@ -256,17 +250,97 @@ class Queen(Piece):
 
 class King(Piece):
     def can_move(self, position: Position) -> bool:
+        original_position = self.position
+        original_piece = position.piece
+        board = position.board
         # same position
         if self.same_position(position):
             return False
         # own piece in the way
-        # TODO: account for castling
         elif self.own_piece_interfering(position):
             return False
         elif abs(position.x - self.position.x) <= 1 and abs(position.y - self.position.y) <= 1:
-            return True
+            self.set_position(position)
+            if not self.check_check():
+                self.set_position(original_position)
+                position.piece = original_piece
+                return True
+        elif not self.dirty and position.y == self.position.y and abs(position.x - self.position.x) == 2:
+            if self.check_check():
+                print('Can\'t castle out of check')
+                return False
+            y = self.position.y
+            # determine if legal castle
+            if position.x > self.position.x:
+                # king-side castle
+                rook_position = board.positions[7][y]
+                if rook_position.piece is not None and rook_position.piece.name == 'Rook' and rook_position.piece.player == self.player and not rook_position.piece.dirty:
+                    rook = rook_position.piece
+                    if board.positions[self.position.x + 1][y].piece is None:
+                        self.set_position(board.positions[self.position.x + 1][y])
+                        if self.check_check():
+                            print(f'King would be in check passing through {self.position}')
+                            self.set_position(original_position)
+                            return False
+                        self.set_position(position)
+                        if self.check_check():
+                            print(f'King would be in check at {self.position}')
+                            self.set_position(original_position)
+                            return False
+                        rook.dirty = True
+                        rook.set_position(board.positions[self.position.x - 1][y])
+                        # reset king to original position so standard movement can occur
+                        self.set_position(original_position)
+                        return True
+            else:
+                # queen-side castle
+                rook_position = board.positions[0][y]
+                if rook_position.piece is not None and rook_position.piece.name == 'Rook' and rook_position.piece.player == self.player and not rook_position.piece.dirty:
+                    rook = rook_position.piece
+                    if board.positions[self.position.x - 1][y].piece is None and board.positions[self.position.x - 2][y].piece is None and board.positions[self.position.x - 3][y].piece is None:
+                        self.set_position(board.positions[self.position.x - 1][y])
+                        if self.check_check():
+                            print(f'King would be in check passing through {self.position}')
+                            self.set_position(original_position)
+                            return False
+                        self.set_position(position)
+                        if self.check_check():
+                            print(f'King would be in check at {self.position}')
+                            self.set_position(original_position)
+                            return False
+                        rook.dirty = True
+                        rook.set_position(board.positions[self.position.x + 1][y])
+                        self.set_position(original_position)
+                        return True
+        self.set_position(original_position)
+        position.piece = original_piece
         return False
 
+    def check_check(self):
+        other_player = game.inactive_player
+        for piece in other_player.pieces:
+            if piece.can_move(self.position):
+                print(f'{other_player.color} {piece.name} at {piece.position} has {self.player.color} King in check')
+                return True
+        return False
+
+    # only checks if king can move out of check, not if other pieces can interrupt it
+    # def checkmate_check(self, other_player: Player):
+    #     board = self.position.board
+    #     original_position = self.position
+    #     for x in range(self.position.x - 1, self.position.x + 1, 1):
+    #         for y in range(self.position.y - 1, self.position.y + 1, 1):
+    #             try:
+    #                 position = board.positions[x][y]
+    #             except IndexError:
+    #                 continue
+    #             if self.can_move(position):
+    #                 self.position = position
+    #                 if not self.check_check(other_player):
+    #                     self.position = original_position
+    #                     return False
+    #     self.position = original_position
+    #     return True
 
 
 def get_center(parent_surface: pygame.Surface, child_surface: pygame.Surface):
@@ -286,7 +360,7 @@ class GameSession:
         self.selected_piece = None
 
 
-class Pygame:
+class Game:
     def __init__(self, width: int, height: int, fps: int = 20):
         """
         :param width:
@@ -305,6 +379,7 @@ class Pygame:
         self.clock = pygame.time.Clock()
         self.fps = fps
         self.font = pygame.font.SysFont('mono', 20, bold=True)
+        self.check_text = ''
         self.all_sprites = pygame.sprite.Group()
         self.game_pieces = pygame.sprite.Group()
         self.players = [Player('White', y_direction=1), Player('Black', y_direction=-1)]
@@ -312,8 +387,8 @@ class Pygame:
         for position in self.board.positions:
             self.all_sprites.add(position)
         self.game_session = None
-        self.next_player = None
         self.active_player = None
+        self.inactive_player = None
         self.state = None
         self.selected_piece = None
         self.pieces = []
@@ -321,9 +396,8 @@ class Pygame:
 
     def reset(self):
         self.game_session: GameSession = GameSession()
-        player_cycle = cycle(self.players)
-        self.next_player = lambda: next(player_cycle)
-        self.active_player = self.next_player()
+        self.active_player = self.players[0]
+        self.inactive_player = self.players[1]
         self.state = self.game_session.state
         self.selected_piece = self.game_session.selected_piece
         for player in self.players:
@@ -333,6 +407,11 @@ class Pygame:
         self.pieces = []
         self._load_pieces()
         self.draw()
+
+    def _next_player(self):
+        old_active = self.active_player
+        self.active_player = self.inactive_player
+        self.inactive_player = old_active
 
     def _load_pieces(self):
 
@@ -382,6 +461,8 @@ class Pygame:
                     running = False
                 if event.type == MOUSEBUTTONDOWN:
                     self.act(event.pos, event.button)
+                if event.type == KEYDOWN and event.key == K_r:
+                    self.reset()
 
         pygame.quit()
 
@@ -391,6 +472,7 @@ class Pygame:
 
         width, height = self.draw_text(f'Player turn: {self.active_player.color}', (0, 0), (0, 0, 0))
         self.draw_text(f'Piece selected: {self.selected_piece.name if self.selected_piece else "None"}', (0, height), (0, 0, 0))
+        self.draw_text(self.check_text, (0, height * 2), (200, 0, 0))
 
         # self.draw_text(
         #     f"Playtime: {self.game_session.playtime:.2f}")
@@ -421,10 +503,24 @@ class Pygame:
                                         self.reset()
                                         return
                                 self.selected_piece.set_position(position)
+                                self.selected_piece.dirty = True
                                 self.selected_piece = None
+                                self._next_player()
+                                for piece in self.active_player.pieces:
+                                    if piece.name == 'King':
+                                        # print('Check checking')
+                                        in_check = piece.check_check()
+                                        if in_check:
+                                            self.check_text = f'{self.active_player.color} in check!'
+                                        else:
+                                            self.check_text = ''
+                                            # in_checkmate = piece.checkmate_check(inactive_player)
+                                            # if in_checkmate:
+                                            #     print(f'{self.active_player.color} checkmate! You lose!')
+                                            #     self.reset()
                                 self.draw()
                                 self.state = State.PIECE_SELECT
-                                self.active_player = self.next_player()
+
                             else:
                                 print(f'Movement to {position} not legal')
         elif button == 3 and self.state == State.MOVE:
@@ -456,4 +552,5 @@ class Pygame:
 
 
 if __name__ == '__main__':
-    Pygame(SCREEN_WIDTH, SCREEN_HEIGHT).run()
+    game = Game(SCREEN_WIDTH, SCREEN_HEIGHT)
+    game.run()
