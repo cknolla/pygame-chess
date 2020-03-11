@@ -88,6 +88,7 @@ class Position(pygame.sprite.Sprite):
 class Piece(pygame.sprite.Sprite):
     def __init__(self, player: Player):
         super().__init__()
+        self.name = self.__class__.__name__
         self.surface: pygame.Surface = None
         self.image: pygame.image = None
         self.rect: pygame.Rect = None
@@ -117,6 +118,53 @@ class Piece(pygame.sprite.Sprite):
         self.rect.left = position.rect.left
         self.rect.top = position.rect.top
 
+    def same_position(self, position: Position) -> bool:
+        if position == self.position:
+            print('Can\'t move to same position')
+            return True
+        return False
+
+    def own_piece_interfering(self, position: Position) -> bool:
+        if position.piece is not None and position.piece.player == self.player:
+            print(f'Own {position.piece.name} in the way at destination')
+            return True
+        return False
+
+    def straight_clear(self, position: Position) -> bool:
+        board = position.board
+        if position.x == self.position.x and position.y != self.position.y:
+            for y in range(min(position.y, self.position.y), max(position.y, self.position.y), 1):
+                if y == self.position.y:
+                    continue
+                if board.positions[position.x][y].piece is not None:
+                    print(f'{board.positions[position.x][y]} has piece {board.positions[position.x][y].piece.name}')
+                    return False
+            return True
+        if position.x != self.position.x and position.y == self.position.y:
+            for x in range(min(position.x, self.position.x), max(position.x, self.position.x), 1):
+                if x == self.position.x or x == position.x:
+                    continue
+                if board.positions[x][position.y].piece is not None:
+                    print(f'{board.positions[x][position.y]} has piece {board.positions[x][position.y].piece.name}')
+                    return False
+            return True
+
+    def diagonal_clear(self, position: Position) -> bool:
+        board = position.board
+        print(f'start position: {self.position.x},{self.position.y}, end position: {position.x},{position.y}')
+        x_dif = position.x - self.position.x
+        y_dif = position.y - self.position.y
+        if abs(x_dif) == abs(y_dif):
+            for dif in range(1, abs(x_dif), 1):
+                x = self.position.x + (dif % x_dif) if x_dif > 0 else self.position.x - (dif % abs(x_dif))
+                y = self.position.y + (dif % y_dif) if y_dif > 0 else self.position.y - (dif % abs(y_dif))
+                # print(f'dif: {dif}, x: {x}, y: {y}')
+                if board.positions[x][y].piece is not None:
+                    print(
+                        f'{board.positions[x][y]} has piece {board.positions[x][y].piece.name}')
+                    return False
+            return True
+
     # def draw(self):
     #     self.rect = self.image.get_rect()
     #     self.rect.topleft = 0, 0
@@ -128,10 +176,10 @@ class Piece(pygame.sprite.Sprite):
 class Pawn(Piece):
     def can_move(self, position: Position) -> bool:
         # same position
-        if position == self.position:
+        if self.same_position(position):
             return False
         # own piece in the way
-        if position.piece is not None and position.piece.player == self.player:
+        elif self.own_piece_interfering(position):
             return False
         # standard forward move
         elif position.x == self.position.x and \
@@ -150,85 +198,75 @@ class Pawn(Piece):
             position.piece is not None and \
             position.piece.player != self.player:
             return True
+        return False
 
 
 class Rook(Piece):
     def can_move(self, position: Position) -> bool:
-        board = position.board
         # same position
-        if position == self.position:
-            print('rule 1')
+        if self.same_position(position):
             return False
         # own piece in the way
-        if position.piece is not None and position.piece.player == self.player:
-            print('rule 2')
+        elif self.own_piece_interfering(position):
             return False
-        if position.x == self.position.x and position.y != self.position.y:
-            for y in range(min(position.y, self.position.y), max(position.y, self.position.y), 1):
-                if y == self.position.y:
-                    continue
-                if board.positions[position.x][y].piece is not None:
-                    print(f'{board.positions[position.x][y]} has piece {board.positions[position.x][y].piece.__class__.__name__}')
-                    return False
+        elif self.straight_clear(position):
             return True
-        if position.x != self.position.x and position.y == self.position.y:
-            for x in range(min(position.x, self.position.x), max(position.x, self.position.x), 1):
-                if x == self.position.x:
-                    continue
-                if board.positions[x][position.y].piece is not None:
-                    print('rule 4')
-                    return False
-            return True
+        return False
 
 
 class Bishop(Piece):
     def can_move(self, position: Position) -> bool:
         board = position.board
         # same position
-        if position == self.position:
-            print('rule 1')
+        if self.same_position(position):
             return False
         # own piece in the way
-        if position.piece is not None and position.piece.player == self.player:
-            print('rule 2')
+        elif self.own_piece_interfering(position):
             return False
-        # TODO: Fix movement
-        print(f'start position: {self.position.x},{self.position.y}, end position: {position.x},{position.y}')
-        x_dif = position.x - self.position.x
-        y_dif = position.y - self.position.y
-        if abs(x_dif) == abs(y_dif):
-            for dif in range(1, abs(x_dif), 1):
-                x = self.position.x + (dif % x_dif) if x_dif > 0 else self.position.x - (dif % abs(x_dif))
-                y = self.position.y + (dif % y_dif) if y_dif > 0 else self.position.y - (dif & abs(y_dif))
-                print(f'dif: {dif}, x: {x}, y: {y}')
-                if board.positions[x][y].piece is not None:
-                    print(
-                        f'{board.positions[x][y]} has piece {board.positions[x][y].piece.__class__.__name__}')
-                    return False
+        elif self.diagonal_clear(position):
             return True
+        return False
 
 
 class Knight(Piece):
     def can_move(self, position: Position) -> bool:
-        board = position.board
         # same position
-        if position == self.position:
-            print('rule 1')
+        if self.same_position(position):
             return False
         # own piece in the way
-        if position.piece is not None and position.piece.player == self.player:
-            print('rule 2')
+        elif self.own_piece_interfering(position):
             return False
+        elif (abs(position.x - self.position.x) == 1 and abs(position.y - self.position.y) == 2) or (abs(position.x - self.position.x) == 2 and abs(position.y - self.position.y) == 1):
+            return True
+        return False
 
 
 class Queen(Piece):
     def can_move(self, position: Position) -> bool:
-        pass
+        # same position
+        if self.same_position(position):
+            return False
+        # own piece in the way
+        elif self.own_piece_interfering(position):
+            return False
+        elif self.straight_clear(position) or self.diagonal_clear(position):
+            return True
+        return False
 
 
 class King(Piece):
     def can_move(self, position: Position) -> bool:
-        pass
+        # same position
+        if self.same_position(position):
+            return False
+        # own piece in the way
+        # TODO: account for castling
+        elif self.own_piece_interfering(position):
+            return False
+        elif abs(position.x - self.position.x) <= 1 and abs(position.y - self.position.y) <= 1:
+            return True
+        return False
+
 
 
 def get_center(parent_surface: pygame.Surface, child_surface: pygame.Surface):
@@ -360,7 +398,7 @@ class Pygame:
             if self.state == State.PIECE_SELECT:
                 for piece in player.pieces:
                     if piece.rect.collidepoint(*pos):
-                        print(f'Selected {player.color} {piece.__class__.__name__}')
+                        print(f'Selected {player.color} {piece.name}')
                         self.state = State.MOVE
                         self.selected_piece = piece
             elif self.state == State.MOVE:
@@ -368,7 +406,7 @@ class Pygame:
                     for position in row:
                         if position.rect.collidepoint(*pos):
                             if self.selected_piece.can_move(position):
-                                print(f'Moving {player.color} {self.selected_piece.__class__.__name__} to {position}')
+                                print(f'Moving {player.color} {self.selected_piece.name} to {position}')
                                 if position.piece is not None:
                                     position.piece.player.pieces.remove(position.piece)
                                     position.piece.kill()
