@@ -108,11 +108,15 @@ class Piece(pygame.sprite.Sprite):
         # reset position's piece to self
         position.previous_piece = position.piece
         position.piece = self
+        if position.previous_piece is not None:
+            position.previous_piece.player.pieces.remove(position.previous_piece)
         self.rect.left = position.rect.left
         self.rect.top = position.rect.top
 
     def restore_position(self):
         self.position.piece = self.position.previous_piece
+        if self.position.previous_piece is not None:
+            self.position.piece.player.pieces.append(self.position.piece)
         self.position = self.previous_position
         self.previous_position.piece = self
         self.rect.left = self.position.rect.left
@@ -251,8 +255,8 @@ class Queen(Piece):
 
 class King(Piece):
     def can_move(self, position: Position) -> bool:
-        original_position = self.position
-        original_piece = position.piece
+        # original_position = self.position
+        # original_piece = position.piece
         board = position.board
         # same position
         if self._same_position(position):
@@ -263,9 +267,9 @@ class King(Piece):
         elif abs(position.x - self.position.x) <= 1 and abs(position.y - self.position.y) <= 1:
             self.set_position(position)
             if not self.check_check():
-                self.set_position(original_position)
-                position.piece = original_piece
+                self.restore_position()
                 return True
+            self.restore_position()
         elif not self.dirty and position.y == self.position.y and abs(position.x - self.position.x) == 2:
             if self.check_check():
                 print('Can\'t castle out of check')
@@ -281,17 +285,18 @@ class King(Piece):
                         self.set_position(board.positions[self.position.x + 1][y])
                         if self.check_check():
                             print(f'King would be in check passing through {self.position}')
-                            self.set_position(original_position)
+                            self.restore_position()
                             return False
+                        self.restore_position()
                         self.set_position(position)
                         if self.check_check():
                             print(f'King would be in check at {self.position}')
-                            self.set_position(original_position)
+                            self.restore_position()
                             return False
                         rook.dirty = True
                         rook.set_position(board.positions[self.position.x - 1][y])
                         # reset king to original position so standard movement can occur
-                        self.set_position(original_position)
+                        self.restore_position()
                         return True
             else:
                 # queen-side castle
@@ -303,19 +308,20 @@ class King(Piece):
                         self.set_position(board.positions[self.position.x - 1][y])
                         if self.check_check():
                             print(f'King would be in check passing through {self.position}')
-                            self.set_position(original_position)
+                            self.restore_position()
                             return False
+                        self.restore_position()
                         self.set_position(position)
                         if self.check_check():
                             print(f'King would be in check at {self.position}')
-                            self.set_position(original_position)
+                            self.restore_position()
                             return False
                         rook.dirty = True
                         rook.set_position(board.positions[self.position.x + 1][y])
-                        self.set_position(original_position)
+                        self.restore_position()
                         return True
-        self.set_position(original_position)
-        position.piece = original_piece
+        # self.restore_position()
+        # position.piece = original_piece
         return False
 
     def check_check(self):
@@ -326,22 +332,31 @@ class King(Piece):
                 return True
         return False
 
-    # TODO: only checks if king can move out of check, not if other pieces can interrupt it
     def checkmate_check(self):
         board = self.position.board
-        original_position = self.position
-        for x in range(self.position.x - 1, self.position.x + 1, 1):
-            for y in range(self.position.y - 1, self.position.y + 1, 1):
-                try:
-                    position = board.positions[x][y]
-                except IndexError:
-                    continue
-                if self.can_move(position):
-                    self.position = position
-                    if not self.check_check():
-                        self.position = original_position
-                        return False
-        self.position = original_position
+        print('Checkmate checking')
+        for piece in self.player.pieces:
+            for col in board.positions:
+                for position in col:
+                    if piece.can_move(position):
+                        piece.set_position(position)
+                        if not self.check_check():
+                            print(f'{piece} can break check')
+                            piece.restore_position()
+                            return False
+                        piece.restore_position()
+        # for x in range(self.position.x - 1, self.position.x + 1, 1):
+        #     for y in range(self.position.y - 1, self.position.y + 1, 1):
+        #         try:
+        #             position = board.positions[x][y]
+        #         except IndexError:
+        #             continue
+        #         if self.can_move(position):
+        #             self.position = position
+        #             if not self.check_check():
+        #                 self.position = original_position
+        #                 return False
+        # self.position = original_position
         return True
 
 
@@ -464,15 +479,25 @@ class Game:
                         print(f'Selected {player.color} {piece.name}')
                         self.state = State.MOVE
                         self.selected_piece = piece
+                        self._draw()
             elif self.state == State.MOVE:
                 for row in self.board.positions:
                     for position in row:
                         if position.rect.collidepoint(*pos):
                             if self.selected_piece.can_move(position):
+                                self.selected_piece.set_position(position)
+                                for piece in self.active_player.pieces:
+                                    if piece.name == 'King':
+                                        # print('Check checking')
+                                        if piece.check_check():
+                                            print('Move not allowed because player would be in check')
+                                            self.selected_piece.restore_position()
+                                            return
+                                self.selected_piece.restore_position()
                                 print(f'Moving {player.color} {self.selected_piece.name} to {position}')
                                 if position.piece is not None:
                                     print(f'Defeated {position.piece.player.color} {position.piece.name}')
-                                    position.piece.player.pieces.remove(position.piece)
+                                    # position.piece.player.pieces.remove(position.piece)
                                     position.piece.kill()
                                     if position.piece.name == 'King':
                                         self._reset()
@@ -487,6 +512,9 @@ class Game:
                                         in_check = piece.check_check()
                                         if in_check:
                                             self.check_text = f'{self.active_player.color} in check!'
+                                            in_checkmate = piece.checkmate_check()
+                                            if in_checkmate:
+                                                self.check_text = f'{self.active_player.color} CHECKMATE. Press R to reset'
                                         else:
                                             self.check_text = ''
                                             # in_checkmate = piece.checkmate_check(inactive_player)
@@ -502,6 +530,7 @@ class Game:
             self.state = State.PIECE_SELECT
             self.selected_piece = None
             print('Canceled piece selection')
+            self._draw()
 
     def _draw(self):
         for sprite in self.all_sprites:
