@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
 fully-functional 2 player chess
-TODO: en-passant, pawn promotion, checkmate check
 """
 import pickle
 import json
