@@ -12,6 +12,10 @@ import pygame
 from pygame.locals import (
     K_q,
     K_r,
+    K_1,
+    K_2,
+    K_3,
+    K_4,
     K_ESCAPE,
     KEYDOWN,
     MOUSEBUTTONDOWN,
@@ -20,6 +24,7 @@ from pygame.locals import (
 
 SCREEN_WIDTH = 800
 SCREEN_HEIGHT = 600
+FONT_SIZE = 20
 
 
 class Player:
@@ -37,8 +42,10 @@ class Board:
         self.rect = pygame.Rect(0, 0, self.position_size * 8, self.position_size * 8)
         self.rect.left = (width - self.rect.width) / 2
         self.rect.top = (height - self.rect.height) / 2
+        self.max_rows = 8
+        self.max_cols = 8
         self.positions = [
-            [Position(x, y, self) for y in range(8)] for x in range(8)
+            [Position(x, y, self) for y in range(self.max_rows)] for x in range(self.max_cols)
         ]
 
 
@@ -65,7 +72,7 @@ class Position(pygame.sprite.Sprite):
         return f'<BoardPosition: {self.x}, {self.y}>'
 
     def __str__(self):
-        return f'<BoardPosition: {chr(self.x + 97)}{self.y + 1}>'
+        return f'{chr(self.x + 97)}{self.y + 1}'
 
     def update(self):
         """
@@ -78,7 +85,7 @@ class Position(pygame.sprite.Sprite):
 
 
 class Piece(pygame.sprite.Sprite):
-    def __init__(self, player: Player):
+    def __init__(self, player: Player, icon_config):
         super().__init__()
         self.name = self.__class__.__name__
         self.surface: pygame.Surface = None
@@ -90,6 +97,13 @@ class Piece(pygame.sprite.Sprite):
         self.dirty = False  # has moved
         self.player: Player = player
         player.pieces.append(self)
+        self.set_image(icon_config.get(self.player.color).get(self.name))
+
+    def __repr__(self):
+        return f'<{self.__class__.__name__} @ {self.position.__repr__()}>'
+
+    def __str__(self):
+        return f'{self.__class__.__name__} @ {self.position}'
 
     def set_image(self, filename: str):
         self.image = pygame.image.load(filename).convert_alpha()
@@ -198,6 +212,11 @@ class Pawn(Piece):
             return True
         return False
 
+    def promotion_check(self) -> bool:
+        if (self.player.y_direction < 0 and self.position.y == 0) or (self.player.y_direction > 0 and self.position.y == (self.position.board.max_rows - 1)):
+            return True
+        return False
+
 
 class Rook(Piece):
     def can_move(self, position: Position) -> bool:
@@ -254,8 +273,6 @@ class Queen(Piece):
 
 class King(Piece):
     def can_move(self, position: Position) -> bool:
-        # original_position = self.position
-        # original_piece = position.piece
         board = position.board
         # same position
         if self._same_position(position):
@@ -319,8 +336,6 @@ class King(Piece):
                         rook.set_position(board.positions[self.position.x + 1][y])
                         self.restore_position()
                         return True
-        # self.restore_position()
-        # position.piece = original_piece
         return False
 
     def check_check(self):
@@ -344,29 +359,18 @@ class King(Piece):
                             piece.restore_position()
                             return False
                         piece.restore_position()
-        # for x in range(self.position.x - 1, self.position.x + 1, 1):
-        #     for y in range(self.position.y - 1, self.position.y + 1, 1):
-        #         try:
-        #             position = board.positions[x][y]
-        #         except IndexError:
-        #             continue
-        #         if self.can_move(position):
-        #             self.position = position
-        #             if not self.check_check():
-        #                 self.position = original_position
-        #                 return False
-        # self.position = original_position
         return True
 
 
-def get_center(parent_surface: pygame.Surface, child_surface: pygame.Surface):
-    return ((parent_surface.get_width() - child_surface.get_width()) / 2,
-            (parent_surface.get_height() - child_surface.get_height()) / 2)
+# def get_center(parent_surface: pygame.Surface, child_surface: pygame.Surface):
+#     return ((parent_surface.get_width() - child_surface.get_width()) / 2,
+#             (parent_surface.get_height() - child_surface.get_height()) / 2)
 
 
 class State(IntEnum):
     PIECE_SELECT = 0
     MOVE = 1
+    PAWN_PROMOTION = 2
 
 
 class GameSession:
@@ -394,7 +398,7 @@ class Game:
         self.screen.blit(self.background, (0, 0))
         self.clock = pygame.time.Clock()
         self.fps = fps
-        self.font = pygame.font.SysFont('mono', 20, bold=True)
+        self.font = pygame.font.SysFont('mono', FONT_SIZE, bold=True)
         self.check_text = ''
         self.all_sprites = pygame.sprite.Group()
         self.game_pieces = pygame.sprite.Group()
@@ -407,6 +411,8 @@ class Game:
         self.inactive_player = None
         self.state = None
         self.selected_piece = None
+        self.icon_config = self._load_icons()
+        self.layout_config = self._load_layout()
         self.pieces = []
         self._reset()
 
@@ -416,11 +422,7 @@ class Game:
         self.inactive_player = self.players[1]
         self.state = self.game_session.state
         self.selected_piece = self.game_session.selected_piece
-        for player in self.players:
-            for piece in player.pieces:
-                piece.kill()
-            player.pieces = []
-        self.pieces = []
+        self._remove_pieces()
         self._load_pieces()
         self._draw()
 
@@ -429,25 +431,49 @@ class Game:
         self.active_player = self.inactive_player
         self.inactive_player = old_active
 
-    def _load_pieces(self):
-
-        layout_filename = 'piece_layout.json'
+    @staticmethod
+    def _load_icons():
         icon_filename = 'icons.json'
-        piece_types = [King, Queen, Rook, Bishop, Knight, Pawn]
-        with open(layout_filename) as layout_config_file:
-            layout_config = json.load(layout_config_file)
         with open(icon_filename) as icon_config_file:
             icon_config = json.load(icon_config_file)
+        return icon_config
+
+    @staticmethod
+    def _load_layout():
+        layout_filename = 'piece_layout.json'
+        with open(layout_filename) as layout_config_file:
+            layout_config = json.load(layout_config_file)
+        return layout_config
+
+    def _load_piece(self, piece_class, player: Player, position: Position):
+        piece = piece_class(player, self.icon_config)
+        piece.set_position(position)
+        self.pieces.append(piece)
+        self.game_pieces.add(piece)
+        self.all_sprites.add(piece)
+
+    def _load_pieces(self):
+        piece_types = [King, Queen, Rook, Bishop, Knight, Pawn]
         for player in reversed(self.players):
             for piece_type in piece_types:
-                positions = layout_config.get(player.color).get(piece_type.__name__)
+                positions = self.layout_config.get(player.color).get(piece_type.__name__)
                 for position in positions:
-                    piece = piece_type(player)
-                    piece.set_image(icon_config.get(player.color).get(piece_type.__name__))
-                    piece.set_position(self.board.positions[position.get('x')][position.get('y')])
-                    self.pieces.append(piece)
-                    self.game_pieces.add(piece)
-                    self.all_sprites.add(piece)
+                    self._load_piece(piece_type, player, self.board.positions[position.get('x')][position.get('y')])
+
+    def _remove_piece(self, piece: Piece):
+        piece.player.pieces.remove(piece)
+        self.pieces.remove(piece)
+        position = piece.position
+        position.piece = None
+        piece.kill()
+        piece.position = None
+        # self.game_pieces.remove(piece)
+        # self.all_sprites.remove(piece)
+
+    def _remove_pieces(self):
+        pieces = self.pieces.copy() # create a temp copy of self.pieces to avoid removing from list while iterating over it
+        for piece in pieces:
+            self._remove_piece(piece)
 
     def run(self):
         """
@@ -462,20 +488,22 @@ class Game:
             for event in pygame.event.get():
                 if event.type == QUIT or (event.type == KEYDOWN and event.key in [K_ESCAPE, K_q]):
                     running = False
-                if event.type == MOUSEBUTTONDOWN:
+                elif event.type == MOUSEBUTTONDOWN:
                     self._act(event.pos, event.button)
-                if event.type == KEYDOWN and event.key == K_r:
+                elif event.type == KEYDOWN and event.key == K_r:
                     self._reset()
+                elif self.state == State.PAWN_PROMOTION and event.type == KEYDOWN and event.key in (K_1, K_2, K_3, K_4):
+                    self._pawn_promote(event.key)
 
         pygame.quit()
 
     def _act(self, pos: tuple, button: int):
-        if button == 1 and self.board.rect.collidepoint(pos):
+        if button == 1 and self.board.rect.collidepoint(*pos):
             player = self.active_player
             if self.state == State.PIECE_SELECT:
                 for piece in player.pieces:
                     if piece.rect.collidepoint(*pos):
-                        print(f'Selected {player.color} {piece.name}')
+                        print(f'Selected {player.color} {piece}')
                         self.state = State.MOVE
                         self.selected_piece = piece
                         self._draw()
@@ -495,34 +523,18 @@ class Game:
                                 self.selected_piece.restore_position()
                                 print(f'Moving {player.color} {self.selected_piece.name} to {position}')
                                 if position.piece is not None:
-                                    print(f'Defeated {position.piece.player.color} {position.piece.name}')
+                                    print(f'Defeated {position.piece.player.color} {position.piece}')
                                     # position.piece.player.pieces.remove(position.piece)
-                                    position.piece.kill()
-                                    if position.piece.name == 'King':
-                                        self._reset()
-                                        return
+                                    # position.piece.kill()
+                                    self._remove_piece(position.piece)
                                 self.selected_piece.set_position(position)
                                 self.selected_piece.dirty = True
-                                self.selected_piece = None
-                                self._next_player()
-                                for piece in self.active_player.pieces:
-                                    if piece.name == 'King':
-                                        # print('Check checking')
-                                        in_check = piece.check_check()
-                                        if in_check:
-                                            self.check_text = f'{self.active_player.color} in check!'
-                                            in_checkmate = piece.checkmate_check()
-                                            if in_checkmate:
-                                                self.check_text = f'{self.active_player.color} CHECKMATE. Press R to reset'
-                                        else:
-                                            self.check_text = ''
-                                            # in_checkmate = piece.checkmate_check(inactive_player)
-                                            # if in_checkmate:
-                                            #     print(f'{self.active_player.color} checkmate! You lose!')
-                                            #     self.reset()
+                                if self.selected_piece.name == 'Pawn' and self.selected_piece.promotion_check():
+                                    self.state = State.PAWN_PROMOTION
+                                    self._draw_text(f'Pawn promotion: 1. Queen, 2. Knight, 3. Rook, 4. Bishop', (0, SCREEN_HEIGHT - FONT_SIZE), (0, 0, 0))
+                                else:
+                                    self._end_turn()
                                 self._draw()
-                                self.state = State.PIECE_SELECT
-
                             else:
                                 print(f'Movement to {position} not legal')
         elif button == 3 and self.state == State.MOVE:
@@ -530,6 +542,38 @@ class Game:
             self.selected_piece = None
             print('Canceled piece selection')
             self._draw()
+
+    def _end_turn(self):
+        self.selected_piece = None
+        self._next_player()
+        for piece in self.active_player.pieces:
+            if piece.name == 'King':
+                # print('Check checking')
+                in_check = piece.check_check()
+                if in_check:
+                    self.check_text = f'{self.active_player.color} in check!'
+                    in_checkmate = piece.checkmate_check()
+                    if in_checkmate:
+                        self.check_text = f'{self.active_player.color} CHECKMATE. Press R to reset'
+                else:
+                    self.check_text = ''
+        self.state = State.PIECE_SELECT
+
+    def _pawn_promote(self, key):
+        position = self.selected_piece.position
+        self._remove_piece(self.selected_piece)
+        # generate new piece
+        if key == K_1:
+            piece_type = Queen
+        elif key == K_2:
+            piece_type = Knight
+        elif key == K_3:
+            piece_type = Rook
+        else:
+            piece_type = Bishop
+        self._load_piece(piece_type, self.active_player, position)
+        self._end_turn()
+        self._draw()
 
     def _draw(self):
         for sprite in self.all_sprites:
