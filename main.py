@@ -32,6 +32,7 @@ class Player:
         self.color = color
         self.y_direction = y_direction
         self.pieces: typing.List[Piece] = []
+        self.en_passant_pawn: Piece = None
 
 
 class Board:
@@ -93,7 +94,7 @@ class Piece(pygame.sprite.Sprite):
         self.rect: pygame.Rect = None
         self.position: Position = None
         self.previous_position: Position = None
-        self.initial_position: Position = None
+        # self.initial_position: Position = None
         self.dirty = False  # has moved
         self.player: Player = player
         player.pieces.append(self)
@@ -112,9 +113,7 @@ class Piece(pygame.sprite.Sprite):
 
     def set_position(self, position: Position):
         self.previous_position = self.position
-        if self.position is None:
-            self.initial_position = position
-        else:
+        if self.position is not None:
             # unset old position's piece
             self.position.piece = None
         self.position = position
@@ -201,15 +200,23 @@ class Pawn(Piece):
         # double-move from starting position
         elif position.x == self.position.x and \
             position.y == (self.position.y + (self.player.y_direction * 2)) and \
-            self.position == self.initial_position and \
+            not self.dirty and \
             position.piece is None:
+            self.player.en_passant_pawn = self  # making a move which allows en passant capture on opponent's turn
             return True
         # attack move into a position occupied by enemy
         elif (position.x == (self.position.x + 1) or position.x == (self.position.x - 1)) and \
-            position.y == (self.position.y + self.player.y_direction) and \
-            position.piece is not None and \
-            position.piece.player != self.player:
-            return True
+            position.y == (self.position.y + self.player.y_direction):
+            if position.piece is not None and position.piece.player != self.player:
+                return True
+            elif position.board.positions[position.x][position.y + (self.player.y_direction * -1)].piece is not None and \
+                    position.board.positions[position.x][position.y + (self.player.y_direction * -1)].piece.player != self.player and \
+                    position.board.positions[position.x][position.y + (self.player.y_direction * -1)].piece.player.en_passant_pawn == position.board.positions[position.x][position.y + (self.player.y_direction * -1)].piece:
+                # en passant check
+                # move en passant pawn back to target position so it will be properly killed by _act logic
+                position.board.positions[position.x][position.y + (self.player.y_direction * -1)].piece.set_position(position)
+                print('En Passant!')
+                return True
         return False
 
     def promotion_check(self) -> bool:
@@ -546,6 +553,7 @@ class Game:
     def _end_turn(self):
         self.selected_piece = None
         self._next_player()
+        self.active_player.en_passant_pawn = None
         for piece in self.active_player.pieces:
             if piece.name == 'King':
                 # print('Check checking')
